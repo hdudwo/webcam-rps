@@ -410,7 +410,7 @@
                   <div>MISS: <b id="drumMiss">0</b></div>
                   <div>PROGRESS: <b id="drumProgress">0%</b></div>
                 </div>
-                <p class="hint">노트 링이 패드에 겹칠 때 타격하면 점수가 올라가. 이미지 출처: Wikimedia Commons (Drumsticks.png)</p>
+                <p class="hint">노트 링이 패드에 겹칠 때 타격하면 점수가 올라가. assets/song.mp3가 있으면 그 파일을 재생하고, 없으면 내장 비트로 플레이돼.</p>
               </div>
 
               <div class="card drum-actions">
@@ -569,6 +569,7 @@
 
       const moves = ["rock", "paper", "scissors"];
       const stickSourceUrl = "assets/drumstick-only.png";
+      const rhythmSongUrl = "assets/song.mp3";
 
       let mode = null;
       let cameraStarted = false;
@@ -595,6 +596,9 @@
       let rhythmLastJudgeTone = "neutral";
       let rhythmChart = [];
       let scheduledSongNodes = [];
+      let rhythmStartAtMs = 0;
+      let rhythmSongAudio = null;
+      let rhythmSongEnabled = false;
       let isMuted = false;
       let audioCtx = null;
       let stickSpriteImage = null;
@@ -626,6 +630,19 @@
           singleStickSprite = null;
         };
         img.src = stickSourceUrl;
+      }
+
+      function initRhythmSong() {
+        const song = new Audio();
+        song.preload = "auto";
+        song.src = rhythmSongUrl;
+        song.addEventListener("canplaythrough", () => {
+          rhythmSongEnabled = true;
+        });
+        song.addEventListener("error", () => {
+          rhythmSongEnabled = false;
+        });
+        rhythmSongAudio = song;
       }
 
       function createSingleStickSprite(sourceImg) {
@@ -971,8 +988,8 @@
       }
 
       function getRhythmNowSec() {
-        if (!rhythmIsRunning || !audioCtx) return 0;
-        return audioCtx.currentTime - rhythmStartedAt;
+        if (!rhythmIsRunning || rhythmStartAtMs <= 0) return 0;
+        return (performance.now() - rhythmStartAtMs) / 1000;
       }
 
       function trackScheduledNode(node) {
@@ -1037,6 +1054,7 @@
       function stopRhythmGame(showResult = true) {
         rhythmIsRunning = false;
         rhythmIsCountingDown = false;
+        rhythmStartAtMs = 0;
         rhythmStartedAt = 0;
         countdownEl.textContent = "";
         for (const node of scheduledSongNodes) {
@@ -1047,6 +1065,10 @@
           }
         }
         scheduledSongNodes = [];
+        if (rhythmSongAudio) {
+          rhythmSongAudio.pause();
+          rhythmSongAudio.currentTime = 0;
+        }
 
         if (!showResult) return;
         const total = rhythmChart.length || 1;
@@ -1071,11 +1093,24 @@
         await wait(260);
         countdownEl.textContent = "";
 
-        rhythmStartedAt = audioCtx.currentTime + 0.12;
+        const leadMs = 120;
+        rhythmStartAtMs = performance.now() + leadMs;
+        rhythmStartedAt = audioCtx.currentTime + leadMs / 1000;
         rhythmIsRunning = true;
         rhythmIsCountingDown = false;
-        scheduleRhythmSong(rhythmStartedAt);
-        statusEl.textContent = "비트에 맞춰 패드를 타격";
+        if (rhythmSongAudio && rhythmSongEnabled) {
+          rhythmSongAudio.currentTime = 0;
+          window.setTimeout(() => {
+            rhythmSongAudio.play().catch(() => {
+              scheduleRhythmSong(audioCtx.currentTime + 0.03);
+              statusEl.textContent = "비트(내장) 재생 중";
+            });
+          }, leadMs);
+          statusEl.textContent = "노래 재생 중";
+        } else {
+          scheduleRhythmSong(rhythmStartedAt);
+          statusEl.textContent = "비트(내장) 재생 중";
+        }
         drumResultEl.textContent = "READY";
         markJudgeFeedback("START", "good");
       }
@@ -1674,6 +1709,7 @@
       });
 
       loadStickSprite();
+      initRhythmSong();
     </script>
   </body>
 </html>
