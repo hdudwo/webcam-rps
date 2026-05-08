@@ -1,0 +1,1352 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Webcam Mini Arcade</title>
+    <style>
+      :root {
+        --bg-1: #0b1220;
+        --bg-2: #111827;
+        --panel: rgba(17, 24, 39, 0.76);
+        --line: rgba(255, 255, 255, 0.14);
+        --text: #ecfeff;
+        --mint: #34d399;
+        --cyan: #22d3ee;
+        --rose: #fb7185;
+        --gold: #f59e0b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: "Segoe UI", "Noto Sans KR", sans-serif;
+        background:
+          radial-gradient(circle at 12% 18%, rgba(34, 211, 238, 0.2), transparent 35%),
+          radial-gradient(circle at 88% 84%, rgba(251, 113, 133, 0.19), transparent 35%),
+          linear-gradient(145deg, var(--bg-1), var(--bg-2));
+        display: grid;
+        place-items: center;
+        padding: 20px;
+      }
+
+      .app {
+        width: min(1060px, 100%);
+        border-radius: 24px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.36);
+        backdrop-filter: blur(14px);
+        overflow: hidden;
+      }
+
+      .top {
+        padding: 18px 24px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: clamp(21px, 3vw, 34px);
+      }
+
+      .subtitle {
+        margin: 4px 0 0;
+        font-size: 13px;
+        opacity: 0.86;
+      }
+
+      button {
+        border: none;
+        border-radius: 12px;
+        padding: 11px 14px;
+        font-weight: 700;
+        cursor: pointer;
+        color: #09111a;
+      }
+
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .back {
+        background: linear-gradient(120deg, #fbbf24, var(--rose));
+      }
+
+      .full {
+        background: linear-gradient(120deg, var(--mint), var(--cyan));
+      }
+
+      .top-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .screen {
+        display: none;
+      }
+
+      .screen.active {
+        display: block;
+      }
+
+      .home {
+        padding: 20px;
+      }
+
+      .home-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(220px, 1fr));
+        gap: 14px;
+      }
+
+      .game-card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 18px;
+        background: rgba(2, 6, 23, 0.52);
+      }
+
+      .game-card h2 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+
+      .game-card p {
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.5;
+        opacity: 0.9;
+      }
+
+      .pick {
+        margin-top: 14px;
+        width: 100%;
+        background: linear-gradient(120deg, var(--mint), var(--cyan));
+      }
+
+      .game-layout {
+        display: grid;
+        grid-template-columns: 1.6fr 1fr;
+        gap: 14px;
+        padding: 14px;
+      }
+
+      .video-wrap {
+        position: relative;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        overflow: hidden;
+        min-height: 320px;
+        background: #020617;
+      }
+
+      .video-wrap:fullscreen {
+        border: none;
+        border-radius: 0;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      .video-wrap:fullscreen video,
+      .video-wrap:fullscreen canvas {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      video,
+      canvas {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      canvas {
+        position: absolute;
+        inset: 0;
+      }
+
+      .hud {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .pill {
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(2, 6, 23, 0.78);
+        padding: 8px 10px;
+        border-radius: 999px;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .countdown {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: clamp(54px, 11vw, 108px);
+        font-weight: 900;
+        text-shadow: 0 0 20px rgba(255, 255, 255, 0.75);
+        pointer-events: none;
+      }
+
+      .side {
+        display: grid;
+        gap: 10px;
+        align-content: start;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+        background: rgba(2, 6, 23, 0.45);
+      }
+
+      .mode-panel {
+        display: none;
+      }
+
+      .mode-panel.active {
+        display: grid;
+        gap: 10px;
+      }
+
+      .score {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .score-box {
+        text-align: center;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+      }
+
+      .score-box b {
+        display: block;
+        margin-top: 4px;
+        font-size: 28px;
+      }
+
+      .result {
+        margin: 0;
+        font-size: 17px;
+        line-height: 1.45;
+      }
+
+      .gesture {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .gesture div {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+        text-align: center;
+        background: rgba(15, 23, 42, 0.7);
+        font-size: 14px;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .start {
+        background: linear-gradient(120deg, var(--mint), var(--cyan));
+      }
+
+      .reset {
+        background: linear-gradient(120deg, #fbbf24, var(--rose));
+      }
+
+      .drum-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .drum-map {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .drum-map div {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px;
+        font-size: 13px;
+        background: rgba(15, 23, 42, 0.7);
+      }
+
+      .hint {
+        margin: 0;
+        font-size: 13px;
+        opacity: 0.86;
+      }
+
+      .hot {
+        outline: 2px solid rgba(34, 211, 238, 0.7);
+      }
+
+      @media (max-width: 920px) {
+        .home-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .game-layout {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <section class="top">
+        <div>
+          <h1 class="title">Webcam Mini Arcade</h1>
+          <p class="subtitle">모드 선택 후 웹캠 손동작으로 플레이</p>
+        </div>
+        <div class="top-actions">
+          <button id="fullscreenBtn" class="full" style="display: none">전체화면</button>
+          <button id="backBtn" class="back" style="display: none">모드 선택으로</button>
+        </div>
+      </section>
+
+      <section id="homeScreen" class="screen home active">
+        <div class="home-grid">
+          <article class="game-card">
+            <h2>가위바위보</h2>
+            <p>3초 카운트 후 손 모양을 판정해서 봇과 승부해.</p>
+            <button id="pickRps" class="pick">이 모드 시작</button>
+          </article>
+          <article class="game-card">
+            <h2>웹캠 드럼</h2>
+            <p>손가락 끝으로 패드를 터치해서 킥/스네어/하이햇을 연주해.</p>
+            <button id="pickDrum" class="pick">이 모드 시작</button>
+          </article>
+        </div>
+      </section>
+
+      <section id="gameScreen" class="screen">
+        <div class="game-layout">
+          <div class="video-wrap">
+            <video id="video" autoplay playsinline muted></video>
+            <canvas id="canvas"></canvas>
+            <div id="countdown" class="countdown"></div>
+            <div class="hud">
+              <span id="status" class="pill">모드를 선택하고 카메라를 시작해줘</span>
+              <span id="meta" class="pill">Mode -</span>
+            </div>
+          </div>
+
+          <aside class="side">
+            <section id="rpsPanel" class="mode-panel">
+              <div class="card score">
+                <div class="score-box">YOU<b id="userScore">0</b></div>
+                <div class="score-box">BOT<b id="botScore">0</b></div>
+              </div>
+
+              <div class="card">
+                <p id="result" class="result">Start를 누르면 라운드를 시작해.</p>
+                <div class="gesture">
+                  <div>나: <b id="userMove">-</b></div>
+                  <div>봇: <b id="botMove">-</b></div>
+                </div>
+                <p class="hint">판정: 주먹=바위, 손가락 2개=가위, 그 외=보</p>
+              </div>
+
+              <div class="card actions">
+                <button id="startBtn" class="start">Start Round</button>
+                <button id="resetRpsBtn" class="reset">Reset Score</button>
+              </div>
+            </section>
+
+            <section id="drumPanel" class="mode-panel">
+              <div class="card score">
+                <div class="score-box">HITS<b id="drumHits">0</b></div>
+                <div class="score-box">BEST COMBO<b id="drumBest">0</b></div>
+              </div>
+
+              <div class="card">
+                <p id="drumResult" class="result">실제 드럼셋 배치야. 각 악기 위치를 직접 쳐봐.</p>
+                <div class="drum-map">
+                  <div id="pad0">1: CRASH</div>
+                  <div id="pad1">2: RIDE</div>
+                  <div id="pad2">3: HI-HAT</div>
+                  <div id="pad3">4: TOM 1</div>
+                  <div id="pad4">5: TOM 2</div>
+                  <div id="pad5">6: SNARE</div>
+                  <div id="pad6">7: FLOOR TOM</div>
+                  <div id="pad7">8: KICK</div>
+                </div>
+                <p class="hint">오버레이 드럼 패드로 타격해. 악기 영역은 타격 시 하이라이트돼. 이미지 출처: Wikimedia Commons (Drumsticks.png)</p>
+              </div>
+
+              <div class="card drum-actions">
+                <button id="drumResetBtn" class="reset">Reset Drum</button>
+                <button id="drumMuteBtn" class="start">Mute: OFF</button>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script>
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+
+      const homeScreen = document.getElementById("homeScreen");
+      const gameScreen = document.getElementById("gameScreen");
+      const backBtn = document.getElementById("backBtn");
+      const fullscreenBtn = document.getElementById("fullscreenBtn");
+      const pickRps = document.getElementById("pickRps");
+      const pickDrum = document.getElementById("pickDrum");
+      const videoWrap = document.querySelector(".video-wrap");
+
+      const statusEl = document.getElementById("status");
+      const metaEl = document.getElementById("meta");
+      const countdownEl = document.getElementById("countdown");
+
+      const rpsPanel = document.getElementById("rpsPanel");
+      const drumPanel = document.getElementById("drumPanel");
+
+      const resultEl = document.getElementById("result");
+      const userMoveEl = document.getElementById("userMove");
+      const botMoveEl = document.getElementById("botMove");
+      const userScoreEl = document.getElementById("userScore");
+      const botScoreEl = document.getElementById("botScore");
+      const startBtn = document.getElementById("startBtn");
+      const resetRpsBtn = document.getElementById("resetRpsBtn");
+
+      const drumHitsEl = document.getElementById("drumHits");
+      const drumBestEl = document.getElementById("drumBest");
+      const drumResultEl = document.getElementById("drumResult");
+      const drumResetBtn = document.getElementById("drumResetBtn");
+      const drumMuteBtn = document.getElementById("drumMuteBtn");
+      const drumPadDefs = [
+        {
+          label: "CRASH",
+          sound: "crash",
+          kind: "cymbal",
+          cx: 0.24,
+          cy: 0.2,
+          rx: 0.16,
+          ry: 0.075,
+          rot: -0.08,
+          color: "#fbbf24",
+          fill: "rgba(251,191,36,0.14)",
+        },
+        {
+          label: "RIDE",
+          sound: "ride",
+          kind: "cymbal",
+          cx: 0.78,
+          cy: 0.25,
+          rx: 0.17,
+          ry: 0.085,
+          rot: -0.36,
+          color: "#fde68a",
+          fill: "rgba(253,230,138,0.13)",
+        },
+        {
+          label: "HI-HAT",
+          sound: "hat",
+          kind: "cymbal",
+          cx: 0.1,
+          cy: 0.45,
+          rx: 0.095,
+          ry: 0.04,
+          rot: -0.02,
+          color: "#22d3ee",
+          fill: "rgba(34,211,238,0.13)",
+        },
+        {
+          label: "TOM 1",
+          sound: "tomHigh",
+          kind: "drum",
+          cx: 0.42,
+          cy: 0.4,
+          rx: 0.09,
+          ry: 0.075,
+          rot: 0,
+          color: "#f87171",
+          fill: "rgba(248,113,113,0.13)",
+        },
+        {
+          label: "TOM 2",
+          sound: "tomMid",
+          kind: "drum",
+          cx: 0.58,
+          cy: 0.4,
+          rx: 0.09,
+          ry: 0.075,
+          rot: 0,
+          color: "#ef4444",
+          fill: "rgba(239,68,68,0.13)",
+        },
+        {
+          label: "SNARE",
+          sound: "snare",
+          kind: "drum",
+          cx: 0.22,
+          cy: 0.63,
+          rx: 0.125,
+          ry: 0.095,
+          rot: -0.08,
+          color: "#fb7185",
+          fill: "rgba(251,113,133,0.12)",
+        },
+        {
+          label: "FLOOR TOM",
+          sound: "tomLow",
+          kind: "drum",
+          cx: 0.74,
+          cy: 0.66,
+          rx: 0.14,
+          ry: 0.12,
+          rot: 0.02,
+          color: "#dc2626",
+          fill: "rgba(220,38,38,0.12)",
+        },
+        {
+          label: "KICK",
+          sound: "kick",
+          kind: "drum",
+          cx: 0.5,
+          cy: 0.82,
+          rx: 0.2,
+          ry: 0.17,
+          rot: 0,
+          color: "#34d399",
+          fill: "rgba(52,211,153,0.11)",
+        },
+      ];
+      const padEls = drumPadDefs.map((_, id) => document.getElementById(`pad${id}`));
+
+      const moves = ["rock", "paper", "scissors"];
+      const stickSourceUrl = "assets/drumstick-only.png";
+
+      let mode = null;
+      let cameraStarted = false;
+      let latestLandmarks = null;
+      let latestHands = [];
+      let isCountingDown = false;
+
+      let rpsRound = 0;
+      let userScore = 0;
+      let botScore = 0;
+
+      let drumHits = 0;
+      let drumCombo = 0;
+      let drumBestCombo = 0;
+      let isMuted = false;
+      let audioCtx = null;
+      let stickSpriteImage = null;
+      let singleStickSprite = null;
+      let stickSpriteReady = false;
+
+      const handState = new Map();
+      const padLastHitAt = new Array(drumPadDefs.length).fill(0);
+      const padFlashUntil = new Array(drumPadDefs.length).fill(0);
+
+      function loadStickSprite() {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          stickSpriteImage = img;
+          singleStickSprite = createSingleStickSprite(img);
+          stickSpriteReady = true;
+        };
+        img.onerror = () => {
+          stickSpriteReady = false;
+          singleStickSprite = null;
+        };
+        img.src = stickSourceUrl;
+      }
+
+      function createSingleStickSprite(sourceImg) {
+        const off = document.createElement("canvas");
+        off.width = sourceImg.width;
+        off.height = sourceImg.height;
+        const ox = off.getContext("2d");
+        if (!ox) return null;
+
+        ox.drawImage(sourceImg, 0, 0);
+        ox.globalCompositeOperation = "destination-in";
+        ox.lineCap = "round";
+        ox.strokeStyle = "#fff";
+        ox.lineWidth = sourceImg.width * 0.11;
+        ox.beginPath();
+        // Keep only the left stick from the source pair.
+        ox.moveTo(sourceImg.width * 0.07, sourceImg.height * 0.07);
+        ox.lineTo(sourceImg.width * 0.84, sourceImg.height * 0.94);
+        ox.stroke();
+        ox.globalCompositeOperation = "source-over";
+
+        return off;
+      }
+
+
+      function getFingerCount(landmarks) {
+        if (!landmarks) return 0;
+        const tipIds = [8, 12, 16, 20];
+        const pipIds = [6, 10, 14, 18];
+        let count = 0;
+
+        for (let i = 0; i < tipIds.length; i++) {
+          if (landmarks[tipIds[i]].y < landmarks[pipIds[i]].y) count += 1;
+        }
+
+        if (landmarks[4].x < landmarks[3].x) count += 1;
+        return count;
+      }
+
+      function fingersToMove(fingers) {
+        if (fingers <= 1) return "rock";
+        if (fingers === 2) return "scissors";
+        return "paper";
+      }
+
+      function prettyMove(move) {
+        if (move === "rock") return "바위";
+        if (move === "paper") return "보";
+        if (move === "scissors") return "가위";
+        return "-";
+      }
+
+      function decideWinner(user, bot) {
+        if (user === bot) return "draw";
+        if (
+          (user === "rock" && bot === "scissors") ||
+          (user === "scissors" && bot === "paper") ||
+          (user === "paper" && bot === "rock")
+        ) {
+          return "user";
+        }
+        return "bot";
+      }
+
+      function wait(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      function updateRpsScore() {
+        userScoreEl.textContent = String(userScore);
+        botScoreEl.textContent = String(botScore);
+        metaEl.textContent = `RPS Round ${rpsRound}`;
+      }
+
+      function updateDrumScore() {
+        drumHitsEl.textContent = String(drumHits);
+        drumBestEl.textContent = String(drumBestCombo);
+        metaEl.textContent = `DRUM Hits ${drumHits}`;
+      }
+
+      function activateScreen(isGame) {
+        homeScreen.classList.toggle("active", !isGame);
+        gameScreen.classList.toggle("active", isGame);
+        backBtn.style.display = isGame ? "inline-block" : "none";
+        fullscreenBtn.style.display = isGame ? "inline-block" : "none";
+      }
+
+      function activatePanel(which) {
+        rpsPanel.classList.toggle("active", which === "rps");
+        drumPanel.classList.toggle("active", which === "drum");
+      }
+
+      function resetRps() {
+        rpsRound = 0;
+        userScore = 0;
+        botScore = 0;
+        userMoveEl.textContent = "-";
+        botMoveEl.textContent = "-";
+        resultEl.textContent = "Start를 누르면 라운드를 시작해.";
+        updateRpsScore();
+      }
+
+      function resetDrum() {
+        drumHits = 0;
+        drumCombo = 0;
+        drumBestCombo = 0;
+        drumResultEl.textContent = "실제 드럼셋 위치를 직접 타격해봐.";
+        for (let i = 0; i < padLastHitAt.length; i++) {
+          padLastHitAt[i] = 0;
+          padFlashUntil[i] = 0;
+        }
+        updateDrumScore();
+      }
+
+      function ensureAudio() {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+      }
+
+      function makeNoiseBuffer() {
+        const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.25, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        return buffer;
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      function toHitGain(hitStrength = 0.65) {
+        const normalized = clamp(hitStrength, 0, 1);
+        return 0.25 + normalized * 0.95;
+      }
+
+      function playKick(hitStrength = 0.65) {
+        if (isMuted || !audioCtx) return;
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const hitGain = toHitGain(hitStrength);
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(145, now);
+        osc.frequency.exponentialRampToValueAtTime(42, now + 0.18);
+        gain.gain.setValueAtTime(1 * hitGain, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 0.22);
+      }
+
+      function playSnare(hitStrength = 0.65) {
+        if (isMuted || !audioCtx) return;
+        const now = audioCtx.currentTime;
+        const hitGain = toHitGain(hitStrength);
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = makeNoiseBuffer();
+        const hp = audioCtx.createBiquadFilter();
+        hp.type = "highpass";
+        hp.frequency.value = 1300;
+        const ng = audioCtx.createGain();
+        ng.gain.setValueAtTime(0.75 * hitGain, now);
+        ng.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+        noise.connect(hp).connect(ng).connect(audioCtx.destination);
+
+        const tone = audioCtx.createOscillator();
+        const tg = audioCtx.createGain();
+        tone.type = "triangle";
+        tone.frequency.setValueAtTime(180, now);
+        tg.gain.setValueAtTime(0.4 * hitGain, now);
+        tg.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        tone.connect(tg).connect(audioCtx.destination);
+
+        noise.start(now);
+        noise.stop(now + 0.18);
+        tone.start(now);
+        tone.stop(now + 0.15);
+      }
+
+      function playHat(hitStrength = 0.65) {
+        if (isMuted || !audioCtx) return;
+        const now = audioCtx.currentTime;
+        const hitGain = toHitGain(hitStrength);
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = makeNoiseBuffer();
+        const hp = audioCtx.createBiquadFilter();
+        hp.type = "highpass";
+        hp.frequency.value = 5500;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.45 * hitGain, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+        noise.connect(hp).connect(g).connect(audioCtx.destination);
+        noise.start(now);
+        noise.stop(now + 0.08);
+      }
+
+      function playClap(hitStrength = 0.65) {
+        if (isMuted || !audioCtx) return;
+        const now = audioCtx.currentTime;
+        const hitGain = toHitGain(hitStrength);
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = makeNoiseBuffer();
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = "bandpass";
+        bp.frequency.value = 1800;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.7 * hitGain, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        noise.connect(bp).connect(g).connect(audioCtx.destination);
+        noise.start(now);
+        noise.stop(now + 0.13);
+      }
+
+      function playTom(startFreq, endFreq, decay, hitStrength = 0.65) {
+        if (isMuted || !audioCtx) return;
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const hitGain = toHitGain(hitStrength);
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(startFreq, now);
+        osc.frequency.exponentialRampToValueAtTime(endFreq, now + decay);
+        gain.gain.setValueAtTime(0.85 * hitGain, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + decay);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + decay + 0.03);
+      }
+
+      function playCrash(hitStrength = 0.65) {
+        if (isMuted || !audioCtx) return;
+        const now = audioCtx.currentTime;
+        const hitGain = toHitGain(hitStrength);
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = makeNoiseBuffer();
+        const hp = audioCtx.createBiquadFilter();
+        hp.type = "highpass";
+        hp.frequency.value = 4200;
+        const lp = audioCtx.createBiquadFilter();
+        lp.type = "lowpass";
+        lp.frequency.value = 11000;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.8 * hitGain, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+        noise.connect(hp).connect(lp).connect(g).connect(audioCtx.destination);
+        noise.start(now);
+        noise.stop(now + 0.45);
+      }
+
+      function playRide(hitStrength = 0.65) {
+        if (isMuted || !audioCtx) return;
+        const now = audioCtx.currentTime;
+        const hitGain = toHitGain(hitStrength);
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = makeNoiseBuffer();
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = "bandpass";
+        bp.frequency.value = 5000;
+        bp.Q.value = 0.8;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.55 * hitGain, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+        noise.connect(bp).connect(g).connect(audioCtx.destination);
+        noise.start(now);
+        noise.stop(now + 0.3);
+      }
+
+      function playPadSound(padIndex, hitStrength = 0.65) {
+        const sound = drumPadDefs[padIndex]?.sound;
+        if (!sound) return;
+        if (sound === "hat") playHat(hitStrength);
+        if (sound === "snare") playSnare(hitStrength);
+        if (sound === "kick") playKick(hitStrength);
+        if (sound === "tomHigh") playTom(230, 128, 0.19, hitStrength);
+        if (sound === "tomMid") playTom(190, 102, 0.22, hitStrength);
+        if (sound === "tomLow") playTom(146, 74, 0.27, hitStrength);
+        if (sound === "crash") playCrash(hitStrength);
+        if (sound === "ride") playRide(hitStrength);
+      }
+
+      function getStickPose(hand, handedLabel) {
+        const mcp = hand[5];
+        const tip = hand[8];
+        const pinkyMcp = hand[17];
+        const px = mcp.x * canvas.width;
+        const py = mcp.y * canvas.height;
+        const tx = tip.x * canvas.width;
+        const ty = tip.y * canvas.height;
+        const qx = pinkyMcp.x * canvas.width;
+        const qy = pinkyMcp.y * canvas.height;
+
+        const dx = tx - px;
+        const dy = ty - py;
+        const len = Math.hypot(dx, dy);
+        if (len < 1) return null;
+
+        const ux = dx / len;
+        const uy = dy / len;
+        const nx = -uy;
+        const ny = ux;
+
+        const gripX = px + dx * 0.38;
+        const gripY = py + dy * 0.38;
+        const side = handedLabel === "Left" ? -1 : 1;
+        const sideOffset = Math.min(canvas.width, canvas.height) * 0.012 * side;
+        const length = Math.min(canvas.width, canvas.height) * 0.3;
+        const back = length * 0.34;
+        const front = length * 0.66;
+        const sx = gripX - ux * back + nx * sideOffset;
+        const sy = gripY - uy * back + ny * sideOffset;
+        const ex = gripX + ux * front + nx * sideOffset;
+        const ey = gripY + uy * front + ny * sideOffset;
+
+        const handSpan = Math.hypot(px - qx, py - qy);
+        const drawLen = Math.max(handSpan * 2.7, length * 0.86);
+        const drawH = Math.max(handSpan * 0.56, 20);
+        const isFist = getFingerCount(hand) <= 1;
+        let angle = Math.atan2(ey - sy, ex - sx);
+        if (isFist) {
+          angle = handedLabel === "Left" ? -Math.PI / 2 - 0.1 : -Math.PI / 2 + 0.1;
+        }
+
+        const anchorX = gripX + nx * sideOffset;
+        const anchorY = gripY + ny * sideOffset;
+        const tipLocalX = drawLen * 0.57;
+
+        return {
+          anchorX,
+          anchorY,
+          angle,
+          drawLen,
+          drawH,
+          tipX: anchorX + Math.cos(angle) * tipLocalX,
+          tipY: anchorY + Math.sin(angle) * tipLocalX,
+        };
+      }
+
+      function drawDrumStick(hand, handedLabel) {
+        const pose = getStickPose(hand, handedLabel);
+        if (!pose) return;
+        const stickScale = 1.28;
+        const stickLen = pose.drawLen * stickScale;
+        const stickH = pose.drawH * 1.2;
+
+        if (stickSpriteReady && singleStickSprite) {
+          ctx.save();
+          ctx.translate(pose.anchorX, pose.anchorY);
+          ctx.rotate(pose.angle);
+          if (handedLabel === "Left") ctx.scale(1, -1);
+          ctx.globalAlpha = 0.98;
+          ctx.filter = "drop-shadow(0 3px 5px rgba(0,0,0,0.38))";
+          ctx.drawImage(
+            singleStickSprite,
+            0,
+            0,
+            singleStickSprite.width,
+            singleStickSprite.height,
+            -stickLen * 0.38,
+            -stickH * 0.5,
+            stickLen,
+            stickH,
+          );
+          ctx.filter = "none";
+          ctx.restore();
+          return;
+        }
+
+        const stickBack = stickLen * 0.34;
+        const tipX = pose.anchorX + Math.cos(pose.angle) * stickLen * 0.57;
+        const tipY = pose.anchorY + Math.sin(pose.angle) * stickLen * 0.57;
+        const tailX = pose.anchorX - Math.cos(pose.angle) * stickBack;
+        const tailY = pose.anchorY - Math.sin(pose.angle) * stickBack;
+
+        ctx.lineCap = "round";
+
+        ctx.strokeStyle = "rgba(73, 31, 9, 0.55)";
+        ctx.lineWidth = 16;
+        ctx.beginPath();
+        ctx.moveTo(tailX, tailY);
+        ctx.lineTo(tipX, tipY);
+        ctx.stroke();
+
+        ctx.strokeStyle = "rgba(232, 181, 122, 0.98)";
+        ctx.lineWidth = 11;
+        ctx.beginPath();
+        ctx.moveTo(tailX, tailY);
+        ctx.lineTo(tipX, tipY);
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+        ctx.beginPath();
+        ctx.arc(tipX, tipY, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function drawRotatedEllipse(cx, cy, rx, ry, rot) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rot);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+        ctx.restore();
+      }
+
+      function drawDrumPads(width, height) {
+        const now = performance.now();
+        const kick = drumPadDefs[7];
+
+        ctx.save();
+        ctx.strokeStyle = "rgba(255,255,255,0.18)";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(width * 0.28, height * 0.72);
+        ctx.lineTo(width * 0.42, height * 0.47);
+        ctx.moveTo(width * 0.72, height * 0.72);
+        ctx.lineTo(width * 0.61, height * 0.47);
+        ctx.stroke();
+        ctx.restore();
+
+        const kx = kick.cx * width;
+        const ky = kick.cy * height;
+        const krx = kick.rx * width;
+        const kry = kick.ry * height;
+        const kickHot = padFlashUntil[7] > now;
+
+        ctx.fillStyle = kickHot ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.09)";
+        drawRotatedEllipse(kx, ky, krx, kry, 0);
+        ctx.fill();
+        ctx.strokeStyle = kick.color;
+        ctx.lineWidth = kickHot ? 8 : 5;
+        drawRotatedEllipse(kx, ky, krx, kry, 0);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(255,255,255,0.48)";
+        ctx.lineWidth = 2.4;
+        drawRotatedEllipse(kx, ky, krx * 0.78, kry * 0.78, 0);
+        ctx.stroke();
+
+        drumPadDefs.forEach((pad, idx) => {
+          if (idx === 7) {
+            padEls[idx].classList.toggle("hot", kickHot);
+            return;
+          }
+
+          const cx = pad.cx * width;
+          const cy = pad.cy * height;
+          const rx = pad.rx * width;
+          const ry = pad.ry * height;
+          const rot = pad.rot || 0;
+          const hot = padFlashUntil[idx] > now;
+
+          ctx.fillStyle = hot ? "rgba(255,255,255,0.25)" : pad.fill;
+          drawRotatedEllipse(cx, cy, rx, ry, rot);
+          ctx.fill();
+
+          ctx.strokeStyle = pad.color;
+          ctx.lineWidth = hot ? 6 : 3.2;
+          drawRotatedEllipse(cx, cy, rx, ry, rot);
+          ctx.stroke();
+
+          ctx.strokeStyle = pad.kind === "cymbal" ? "rgba(255,236,181,0.45)" : "rgba(255,255,255,0.4)";
+          ctx.lineWidth = 1.8;
+          drawRotatedEllipse(cx, cy, rx * 0.72, ry * 0.72, rot);
+          ctx.stroke();
+
+          if (pad.kind === "cymbal") {
+            ctx.strokeStyle = "rgba(255,255,255,0.26)";
+            ctx.lineWidth = 1;
+            drawRotatedEllipse(cx, cy, rx * 0.18, ry * 0.18, rot);
+            ctx.stroke();
+          }
+
+          padEls[idx].classList.toggle("hot", hot);
+        });
+      }
+
+      function getPadAtPoint(x, y) {
+        const normX = x / canvas.width;
+        const normY = y / canvas.height;
+
+        for (let i = 0; i < drumPadDefs.length; i++) {
+          const p = drumPadDefs[i];
+          const rot = p.rot || 0;
+          const dx = normX - p.cx;
+          const dy = normY - p.cy;
+          const cos = Math.cos(rot);
+          const sin = Math.sin(rot);
+          const xr = dx * cos + dy * sin;
+          const yr = -dx * sin + dy * cos;
+          const ex = xr / p.rx;
+          const ey = yr / p.ry;
+          if (ex * ex + ey * ey <= 1) return i;
+        }
+        return -1;
+      }
+
+      function processDrumHits(results) {
+        if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+          handState.clear();
+          return;
+        }
+
+        const now = performance.now();
+
+        results.multiHandLandmarks.forEach((landmarks, i) => {
+          const handed = results.multiHandedness?.[i]?.label || `hand-${i}`;
+          const handKey = `${handed}-${i}`;
+          const pose = getStickPose(landmarks, handed);
+          if (!pose) return;
+          const x = pose.tipX;
+          const y = pose.tipY;
+          const pad = getPadAtPoint(x, y);
+
+          const prev = handState.get(handKey) || { pad: -1, x: x, y: y };
+          const dx = x - prev.x;
+          const dy = y - prev.y;
+          const frameSpeed = Math.hypot(dx, dy);
+          const yVelocity = y - prev.y;
+
+          const isNewPadHit = pad >= 0 && prev.pad !== pad;
+          const isDownStroke = pad >= 0 && prev.pad === pad && yVelocity > 11;
+          const padCooldownOk = pad >= 0 && now - padLastHitAt[pad] > 140;
+
+          if ((isNewPadHit || isDownStroke) && padCooldownOk) {
+            const impact = Math.max(0, yVelocity, frameSpeed * 0.35);
+            const hitStrength = clamp((impact - 5) / 23, 0, 1);
+            padLastHitAt[pad] = now;
+            padFlashUntil[pad] = now + 140;
+            playPadSound(pad, hitStrength);
+
+            drumHits += 1;
+            drumCombo += 1;
+            drumBestCombo = Math.max(drumBestCombo, drumCombo);
+            updateDrumScore();
+            drumResultEl.textContent = `좋아! ${drumPadDefs[pad].label} 타격`;
+          }
+
+          if (pad < 0 && prev.pad >= 0) {
+            drumCombo = 0;
+          }
+
+          handState.set(handKey, { pad, x, y });
+        });
+      }
+
+      async function startRpsRound() {
+        if (mode !== "rps" || isCountingDown) return;
+        if (!latestLandmarks) {
+          resultEl.textContent = "손이 인식되지 않았어. 화면 중앙에 손을 보여줘.";
+          return;
+        }
+
+        isCountingDown = true;
+        startBtn.disabled = true;
+        statusEl.textContent = "카운트다운 시작";
+
+        for (let i = 3; i > 0; i--) {
+          countdownEl.textContent = String(i);
+          await wait(700);
+        }
+        countdownEl.textContent = "GO!";
+        await wait(450);
+        countdownEl.textContent = "";
+
+        const user = fingersToMove(getFingerCount(latestLandmarks));
+        const bot = moves[Math.floor(Math.random() * moves.length)];
+        const who = decideWinner(user, bot);
+
+        rpsRound += 1;
+        userMoveEl.textContent = prettyMove(user);
+        botMoveEl.textContent = prettyMove(bot);
+
+        if (who === "user") {
+          userScore += 1;
+          resultEl.textContent = "승리!";
+        } else if (who === "bot") {
+          botScore += 1;
+          resultEl.textContent = "패배!";
+        } else {
+          resultEl.textContent = "무승부";
+        }
+
+        updateRpsScore();
+        isCountingDown = false;
+        startBtn.disabled = false;
+        statusEl.textContent = "손 추적 중";
+      }
+
+      async function initCameraIfNeeded() {
+        if (cameraStarted) return;
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 960, height: 540 },
+            audio: false,
+          });
+          video.srcObject = stream;
+
+          await new Promise((resolve) => {
+            video.onloadedmetadata = () => resolve();
+          });
+
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+
+          const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+          });
+
+          hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.75,
+            minTrackingConfidence: 0.65,
+          });
+
+          hands.onResults((results) => {
+            ctx.save();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+            latestHands = results.multiHandLandmarks || [];
+            latestLandmarks = latestHands[0] || null;
+
+            if (latestHands.length > 0) {
+              latestHands.forEach((hand, idx) => {
+                drawConnectors(ctx, hand, HAND_CONNECTIONS, {
+                  color: "#22d3ee",
+                  lineWidth: 3,
+                });
+                drawLandmarks(ctx, hand, {
+                  color: "#fb7185",
+                  lineWidth: 2,
+                  radius: 3,
+                });
+                if (mode === "drum") {
+                  const handed = results.multiHandedness?.[idx]?.label || "Right";
+                  drawDrumStick(hand, handed);
+                }
+              });
+
+              if (mode === "rps") {
+                const current = fingersToMove(getFingerCount(latestLandmarks));
+                statusEl.textContent = `손 추적 중 (${prettyMove(current)})`;
+              }
+
+              if (mode === "drum") {
+                drawDrumPads(canvas.width, canvas.height);
+                processDrumHits(results);
+                statusEl.textContent = "드럼 패드 타격 중";
+              }
+            } else {
+              statusEl.textContent = "손을 화면 안에 넣어줘";
+              handState.clear();
+            }
+
+            if (mode !== "drum") {
+              for (const padEl of padEls) padEl.classList.remove("hot");
+            }
+
+            ctx.restore();
+          });
+
+          const camera = new Camera(video, {
+            onFrame: async () => {
+              await hands.send({ image: video });
+            },
+            width: video.videoWidth,
+            height: video.videoHeight,
+          });
+
+          camera.start();
+          cameraStarted = true;
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = "카메라 접근 실패. 브라우저 권한 확인 필요.";
+        }
+      }
+
+      async function startMode(nextMode) {
+        mode = nextMode;
+        activateScreen(true);
+        activatePanel(nextMode);
+        ensureAudio();
+        await initCameraIfNeeded();
+
+        if (nextMode === "rps") {
+          resetRps();
+          metaEl.textContent = "RPS Round 0";
+          statusEl.textContent = "손 추적 중";
+        }
+
+        if (nextMode === "drum") {
+          resetDrum();
+          metaEl.textContent = "DRUM Hits 0";
+          statusEl.textContent = "드럼 패드 타격 준비";
+        }
+      }
+
+      function goHome() {
+        mode = null;
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        }
+        activateScreen(false);
+        activatePanel(null);
+        statusEl.textContent = "모드를 선택하고 카메라를 시작해줘";
+        metaEl.textContent = "Mode -";
+        countdownEl.textContent = "";
+        for (const padEl of padEls) padEl.classList.remove("hot");
+      }
+
+      pickRps.addEventListener("click", () => startMode("rps"));
+      pickDrum.addEventListener("click", () => startMode("drum"));
+      backBtn.addEventListener("click", goHome);
+      fullscreenBtn.addEventListener("click", async () => {
+        if (!document.fullscreenElement) {
+          await videoWrap.requestFullscreen();
+        } else {
+          await document.exitFullscreen();
+        }
+      });
+
+      document.addEventListener("fullscreenchange", () => {
+        fullscreenBtn.textContent = document.fullscreenElement ? "전체화면 종료" : "전체화면";
+      });
+
+      startBtn.addEventListener("click", startRpsRound);
+      resetRpsBtn.addEventListener("click", resetRps);
+
+      drumResetBtn.addEventListener("click", resetDrum);
+      drumMuteBtn.addEventListener("click", () => {
+        isMuted = !isMuted;
+        drumMuteBtn.textContent = `Mute: ${isMuted ? "ON" : "OFF"}`;
+      });
+
+      window.addEventListener("keydown", (e) => {
+        if (mode !== "drum") return;
+        if (!audioCtx) return;
+        const key = Number(e.key);
+        if (!Number.isInteger(key) || key < 1 || key > drumPadDefs.length) return;
+        const idx = key - 1;
+        playPadSound(idx);
+        padFlashUntil[idx] = performance.now() + 120;
+      });
+
+      loadStickSprite();
+    </script>
+  </body>
+</html>
