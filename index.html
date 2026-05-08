@@ -106,7 +106,7 @@
 
       .home-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(220px, 1fr));
+        grid-template-columns: repeat(3, minmax(220px, 1fr));
         gap: 14px;
       }
 
@@ -289,6 +289,16 @@
         gap: 8px;
       }
 
+      .boxing-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .boxing-actions .reset {
+        grid-column: 1 / -1;
+      }
+
       .drum-map {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -348,6 +358,11 @@
             <h2>웹캠 드럼</h2>
             <p>손가락 끝으로 패드를 터치해서 킥/스네어/하이햇을 연주해.</p>
             <button id="pickDrum" class="pick">이 모드 시작</button>
+          </article>
+          <article class="game-card">
+            <h2>웹캠 복싱</h2>
+            <p>주먹을 쥐고 나타나는 미트를 속도 있게 맞추는 타격 게임이야.</p>
+            <button id="pickBoxing" class="pick">이 모드 시작</button>
           </article>
         </div>
       </section>
@@ -420,6 +435,30 @@
                 <button id="drumMuteBtn" class="start">Mute: OFF</button>
               </div>
             </section>
+
+            <section id="boxingPanel" class="mode-panel">
+              <div class="card score">
+                <div class="score-box">HIT<b id="boxingHits">0</b></div>
+                <div class="score-box">BEST<b id="boxingBest">0</b></div>
+              </div>
+
+              <div class="card">
+                <p id="boxingResult" class="result">Start Fight를 누르면 미트가 뜨고 펀치로 맞추는 모드야.</p>
+                <div class="gesture">
+                  <div>TIME: <b id="boxingTime">30</b></div>
+                  <div>HP: <b id="boxingHp">100</b></div>
+                  <div>MISS: <b id="boxingMiss">0</b></div>
+                  <div>ACC: <b id="boxingAcc">0%</b></div>
+                </div>
+                <p class="hint">주먹을 쥔 상태에서 미트 원에 손을 밀어 넣으면 타격돼. 양손 다 사용 가능.</p>
+              </div>
+
+              <div class="card boxing-actions">
+                <button id="boxingStartBtn" class="start">Start Fight</button>
+                <button id="boxingStopBtn" class="back">Stop Fight</button>
+                <button id="boxingResetBtn" class="reset">Reset</button>
+              </div>
+            </section>
           </aside>
         </div>
       </section>
@@ -439,6 +478,7 @@
       const fullscreenBtn = document.getElementById("fullscreenBtn");
       const pickRps = document.getElementById("pickRps");
       const pickDrum = document.getElementById("pickDrum");
+      const pickBoxing = document.getElementById("pickBoxing");
       const videoWrap = document.querySelector(".video-wrap");
 
       const statusEl = document.getElementById("status");
@@ -467,6 +507,17 @@
       const drumStopBtn = document.getElementById("drumStopBtn");
       const drumResetBtn = document.getElementById("drumResetBtn");
       const drumMuteBtn = document.getElementById("drumMuteBtn");
+      const boxingPanel = document.getElementById("boxingPanel");
+      const boxingHitsEl = document.getElementById("boxingHits");
+      const boxingBestEl = document.getElementById("boxingBest");
+      const boxingResultEl = document.getElementById("boxingResult");
+      const boxingTimeEl = document.getElementById("boxingTime");
+      const boxingHpEl = document.getElementById("boxingHp");
+      const boxingMissEl = document.getElementById("boxingMiss");
+      const boxingAccEl = document.getElementById("boxingAcc");
+      const boxingStartBtn = document.getElementById("boxingStartBtn");
+      const boxingStopBtn = document.getElementById("boxingStopBtn");
+      const boxingResetBtn = document.getElementById("boxingResetBtn");
       const drumPadDefs = [
         {
           label: "CRASH",
@@ -599,6 +650,23 @@
       let rhythmStartAtMs = 0;
       let rhythmSongAudio = null;
       let rhythmSongEnabled = false;
+      let boxingHits = 0;
+      let boxingBestCombo = 0;
+      let boxingCombo = 0;
+      let boxingMiss = 0;
+      let boxingHp = 100;
+      let boxingRunning = false;
+      let boxingCountdown = false;
+      let boxingStartAtMs = 0;
+      let boxingEndAtMs = 0;
+      let boxingTarget = null;
+      let boxingJudgeUntilMs = 0;
+      let boxingJudgeText = "READY";
+      let boxingJudgeTone = "neutral";
+      let boxingLastAccuracy = 0;
+      let boxingTargetId = 0;
+      let boxingHitLockUntilMs = 0;
+      let boxingHandState = new Map();
       let isMuted = false;
       let audioCtx = null;
       let stickSpriteImage = null;
@@ -612,6 +680,16 @@
         perfect: 0.09,
         good: 0.18,
       };
+      const BOXING_DURATION_MS = 30000;
+      const BOXING_HIT_WINDOW = 0.09;
+      const BOXING_MISS_WINDOW = 1300;
+      const BOXING_TARGETS = [
+        { label: "JAB", cx: 0.24, cy: 0.38, r: 0.1, color: "#22d3ee", fill: "rgba(34,211,238,0.16)" },
+        { label: "HOOK", cx: 0.76, cy: 0.38, r: 0.1, color: "#fb7185", fill: "rgba(251,113,133,0.16)" },
+        { label: "BODY", cx: 0.5, cy: 0.58, r: 0.12, color: "#fbbf24", fill: "rgba(251,191,36,0.15)" },
+        { label: "UPPERCUT", cx: 0.34, cy: 0.24, r: 0.09, color: "#34d399", fill: "rgba(52,211,153,0.15)" },
+        { label: "OVERHAND", cx: 0.66, cy: 0.24, r: 0.09, color: "#a78bfa", fill: "rgba(167,139,250,0.15)" },
+      ];
 
       const handState = new Map();
       const padLastHitAt = new Array(drumPadDefs.length).fill(0);
@@ -746,6 +824,7 @@
       function activatePanel(which) {
         rpsPanel.classList.toggle("active", which === "rps");
         drumPanel.classList.toggle("active", which === "drum");
+        boxingPanel.classList.toggle("active", which === "boxing");
       }
 
       function resetRps() {
@@ -778,6 +857,36 @@
         handState.clear();
         updateDrumScore();
         updateRhythmBreakdown();
+      }
+
+      function updateBoxingHud() {
+        boxingHitsEl.textContent = String(boxingHits);
+        boxingBestEl.textContent = String(boxingBestCombo);
+        boxingTimeEl.textContent = String(Math.max(0, Math.ceil((boxingEndAtMs - performance.now()) / 1000)));
+        boxingHpEl.textContent = String(Math.max(0, boxingHp));
+        boxingMissEl.textContent = String(boxingMiss);
+        const total = boxingHits + boxingMiss;
+        const acc = total === 0 ? 0 : Math.round((boxingHits / total) * 100);
+        boxingAccEl.textContent = `${clamp(acc, 0, 100)}%`;
+      }
+
+      function resetBoxing() {
+        stopBoxingGame(false);
+        boxingHits = 0;
+        boxingBestCombo = 0;
+        boxingCombo = 0;
+        boxingMiss = 0;
+        boxingHp = 100;
+        boxingTarget = null;
+        boxingJudgeUntilMs = 0;
+        boxingJudgeText = "READY";
+        boxingJudgeTone = "neutral";
+        boxingLastAccuracy = 0;
+        boxingTargetId = 0;
+        boxingHitLockUntilMs = 0;
+        boxingHandState.clear();
+        boxingResultEl.textContent = "Start Fight를 누르면 미트가 뜨고 펀치로 맞추는 모드야.";
+        updateBoxingHud();
       }
 
       function buildRhythmChart() {
@@ -979,6 +1088,259 @@
         if (sound === "tomLow") playTom(146, 74, 0.27, hitStrength);
         if (sound === "crash") playCrash(hitStrength);
         if (sound === "ride") playRide(hitStrength);
+      }
+
+      function playPunchSound(hitStrength = 0.75) {
+        if (isMuted || !audioCtx) return;
+        const now = audioCtx.currentTime;
+        const hitGain = toHitGain(hitStrength);
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(220, now);
+        osc.frequency.exponentialRampToValueAtTime(70, now + 0.09);
+        gain.gain.setValueAtTime(0.55 * hitGain, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      }
+
+      function getBoxingNowMs() {
+        return performance.now();
+      }
+
+      function spawnBoxingTarget(force = false) {
+        if (!force && boxingTarget && !boxingTarget.expired) return boxingTarget;
+        const next = BOXING_TARGETS[(boxingTargetId++ + Math.floor(Math.random() * BOXING_TARGETS.length)) % BOXING_TARGETS.length];
+        boxingTarget = {
+          id: boxingTargetId,
+          label: next.label,
+          cx: next.cx,
+          cy: next.cy,
+          r: next.r,
+          color: next.color,
+          fill: next.fill,
+          bornAt: getBoxingNowMs(),
+          expiresAt: getBoxingNowMs() + BOXING_MISS_WINDOW,
+          expired: false,
+        };
+        return boxingTarget;
+      }
+
+      function markBoxingFeedback(text, tone) {
+        boxingJudgeText = text;
+        boxingJudgeTone = tone;
+        boxingJudgeUntilMs = getBoxingNowMs() + 320;
+      }
+
+      function getBoxingPunchPose(hand, handedLabel) {
+        if (getFingerCount(hand) > 1) return null;
+        const wrist = hand[0];
+        const knuckles = [5, 9, 13, 17].map((idx) => hand[idx]);
+        const centerX = knuckles.reduce((sum, p) => sum + p.x, 0) / knuckles.length * canvas.width;
+        const centerY = knuckles.reduce((sum, p) => sum + p.y, 0) / knuckles.length * canvas.height;
+        const wristX = wrist.x * canvas.width;
+        const wristY = wrist.y * canvas.height;
+        const dirX = centerX - wristX;
+        const dirY = centerY - wristY;
+        const dirLen = Math.hypot(dirX, dirY) || 1;
+        const punchX = centerX + (dirX / dirLen) * 18;
+        const punchY = centerY + (dirY / dirLen) * 18;
+        return {
+          handedLabel,
+          centerX,
+          centerY,
+          wristX,
+          wristY,
+          punchX,
+          punchY,
+        };
+      }
+
+      function drawBoxingOverlay(width, height) {
+        if (!boxingRunning && !boxingCountdown) return;
+        const now = getBoxingNowMs();
+        const target = boxingTarget || spawnBoxingTarget(true);
+        const tx = target.cx * width;
+        const ty = target.cy * height;
+        const pulse = 1 + Math.sin(now / 140) * 0.05;
+        const outer = target.r * Math.min(width, height) * 1.28 * pulse;
+        const inner = outer * 0.62;
+
+        ctx.save();
+        ctx.strokeStyle = target.color;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(tx, ty, outer, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = target.fill;
+        ctx.beginPath();
+        ctx.arc(tx, ty, inner, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(255,255,255,0.5)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(tx, ty, inner * 0.46, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        ctx.font = "bold 24px 'Segoe UI', 'Noto Sans KR', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(target.label, tx, ty + outer + 28);
+        ctx.restore();
+
+        if (boxingJudgeText && now < boxingJudgeUntilMs) {
+          ctx.save();
+          ctx.fillStyle =
+            boxingJudgeTone === "perfect"
+              ? "rgba(52,211,153,0.98)"
+              : boxingJudgeTone === "good"
+                ? "rgba(34,211,238,0.98)"
+                : boxingJudgeTone === "miss"
+                  ? "rgba(251,113,133,0.98)"
+                  : "rgba(236,254,255,0.98)";
+          ctx.font = "bold 44px 'Segoe UI', 'Noto Sans KR', sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(boxingJudgeText, width * 0.5, height * 0.15);
+          ctx.restore();
+        }
+      }
+
+      function startBoxingGame() {
+        if (mode !== "boxing" || boxingRunning || boxingCountdown) return;
+        ensureAudio();
+        resetBoxing();
+        boxingCountdown = true;
+        statusEl.textContent = "복싱 카운트다운";
+        let remaining = 3;
+
+        const tick = async () => {
+          while (remaining > 0) {
+            countdownEl.textContent = String(remaining);
+            await wait(550);
+            remaining -= 1;
+          }
+          countdownEl.textContent = "GO!";
+          await wait(260);
+          countdownEl.textContent = "";
+          boxingRunning = true;
+          boxingCountdown = false;
+          boxingStartAtMs = getBoxingNowMs();
+          boxingEndAtMs = boxingStartAtMs + BOXING_DURATION_MS;
+          boxingTarget = spawnBoxingTarget(true);
+          boxingResultEl.textContent = `TARGET · ${boxingTarget.label}`;
+          statusEl.textContent = "미트를 펀치해";
+          updateBoxingHud();
+        };
+
+        tick();
+      }
+
+      function stopBoxingGame(showResult = true) {
+        boxingRunning = false;
+        boxingCountdown = false;
+        boxingStartAtMs = 0;
+        boxingEndAtMs = 0;
+        countdownEl.textContent = "";
+        boxingHandState.clear();
+        if (!showResult) return;
+        boxingResultEl.textContent = `게임 종료! 히트 ${boxingHits} / 최대 콤보 ${boxingBestCombo} / 정확도 ${boxingLastAccuracy}%`;
+        statusEl.textContent = "Start Fight로 재도전";
+      }
+
+      function finishBoxingGame() {
+        const total = boxingHits + boxingMiss;
+        boxingLastAccuracy = total === 0 ? 0 : Math.round((boxingHits / total) * 100);
+        stopBoxingGame(true);
+      }
+
+      function processBoxingHits(results) {
+        if (boxingRunning) {
+          const now = getBoxingNowMs();
+          const remain = boxingEndAtMs - now;
+          boxingTimeEl.textContent = String(Math.max(0, Math.ceil(remain / 1000)));
+          if (remain <= 0) {
+            finishBoxingGame();
+            updateBoxingHud();
+            return;
+          }
+          if (boxingTarget && now > boxingTarget.expiresAt && !boxingTarget.expired) {
+            boxingTarget.expired = true;
+            boxingMiss += 1;
+            boxingCombo = 0;
+            boxingTarget = spawnBoxingTarget(true);
+            boxingResultEl.textContent = `MISS · ${boxingTarget.label}`;
+            markBoxingFeedback("MISS", "miss");
+          }
+        }
+
+        if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+          boxingHandState.clear();
+          updateBoxingHud();
+          return;
+        }
+
+        const now = getBoxingNowMs();
+        if (now < boxingHitLockUntilMs) {
+          updateBoxingHud();
+          return;
+        }
+        const target = boxingTarget || spawnBoxingTarget(true);
+        const tx = target.cx * canvas.width;
+        const ty = target.cy * canvas.height;
+        const radius = target.r * Math.min(canvas.width, canvas.height);
+
+        results.multiHandLandmarks.forEach((hand, i) => {
+          const handed = results.multiHandedness?.[i]?.label || `hand-${i}`;
+          const punch = getBoxingPunchPose(hand, handed);
+          if (!punch) {
+            boxingHandState.set(handed, { x: 0, y: 0, closed: false });
+            return;
+          }
+
+          const prev = boxingHandState.get(handed) || { x: punch.centerX, y: punch.centerY, closed: true };
+          const speed = Math.hypot(punch.centerX - prev.x, punch.centerY - prev.y);
+          if (now < boxingHitLockUntilMs) {
+            boxingHandState.set(handed, { x: punch.centerX, y: punch.centerY, closed: true });
+            return;
+          }
+          const dx = punch.centerX - tx;
+          const dy = punch.centerY - ty;
+          const dist = Math.hypot(dx, dy);
+          const hitWindow = dist <= radius + 18 && speed > 14;
+
+          if (boxingRunning && hitWindow && now >= target.bornAt) {
+            const hitStrength = clamp((speed - 10) / 28, 0, 1);
+            const damage = Math.round(10 + hitStrength * 22 + boxingCombo * 0.5);
+            boxingHp = Math.max(0, boxingHp - damage);
+            boxingHits += 1;
+            boxingCombo += 1;
+            boxingBestCombo = Math.max(boxingBestCombo, boxingCombo);
+            boxingResultEl.textContent = `HIT · ${target.label} -${damage}`;
+            markBoxingFeedback("HIT", "perfect");
+            playPunchSound(hitStrength);
+            boxingHitLockUntilMs = now + 140;
+            boxingTarget = spawnBoxingTarget(true);
+            boxingTarget.bornAt = now;
+            boxingTarget.expiresAt = now + BOXING_MISS_WINDOW;
+            if (boxingHp <= 0) {
+              boxingLastAccuracy = Math.round((boxingHits / Math.max(1, boxingHits + boxingMiss)) * 100);
+              finishBoxingGame();
+            }
+          } else if (boxingRunning && speed > 18 && dist > radius + 34) {
+            boxingMiss += 1;
+            boxingCombo = 0;
+            boxingResultEl.textContent = "MISS";
+            markBoxingFeedback("MISS", "miss");
+          }
+
+          boxingHandState.set(handed, { x: punch.centerX, y: punch.centerY, closed: true });
+        });
+
+        updateBoxingHud();
       }
 
       function markJudgeFeedback(text, tone) {
@@ -1609,9 +1971,16 @@
                 processDrumHits(results);
                 statusEl.textContent = rhythmIsRunning ? "리듬 진행 중" : "리듬 모드 대기 중";
               }
+
+              if (mode === "boxing") {
+                drawBoxingOverlay(canvas.width, canvas.height);
+                processBoxingHits(results);
+                statusEl.textContent = boxingRunning ? "복싱 진행 중" : "복싱 모드 대기 중";
+              }
             } else {
               statusEl.textContent = "손을 화면 안에 넣어줘";
               handState.clear();
+              boxingHandState.clear();
             }
 
             if (mode !== "drum") {
@@ -1655,10 +2024,17 @@
           metaEl.textContent = "RHYTHM Score 0";
           statusEl.textContent = "Start Song으로 리듬 시작";
         }
+
+        if (nextMode === "boxing") {
+          resetBoxing();
+          metaEl.textContent = "BOXING Hits 0";
+          statusEl.textContent = "Start Fight로 복싱 시작";
+        }
       }
 
       function goHome() {
         stopRhythmGame(false);
+        stopBoxingGame(false);
         mode = null;
         if (document.fullscreenElement) {
           document.exitFullscreen();
@@ -1673,6 +2049,7 @@
 
       pickRps.addEventListener("click", () => startMode("rps"));
       pickDrum.addEventListener("click", () => startMode("drum"));
+      pickBoxing.addEventListener("click", () => startMode("boxing"));
       backBtn.addEventListener("click", goHome);
       fullscreenBtn.addEventListener("click", async () => {
         if (!document.fullscreenElement) {
@@ -1696,6 +2073,10 @@
         isMuted = !isMuted;
         drumMuteBtn.textContent = `Mute: ${isMuted ? "ON" : "OFF"}`;
       });
+
+      boxingStartBtn.addEventListener("click", startBoxingGame);
+      boxingStopBtn.addEventListener("click", () => stopBoxingGame(true));
+      boxingResetBtn.addEventListener("click", resetBoxing);
 
       window.addEventListener("keydown", (e) => {
         if (mode !== "drum") return;
