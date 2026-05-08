@@ -388,12 +388,12 @@
 
             <section id="drumPanel" class="mode-panel">
               <div class="card score">
-                <div class="score-box">HITS<b id="drumHits">0</b></div>
-                <div class="score-box">BEST COMBO<b id="drumBest">0</b></div>
+                <div class="score-box">SCORE<b id="drumHits">0</b></div>
+                <div class="score-box">COMBO<b id="drumBest">0</b></div>
               </div>
 
               <div class="card">
-                <p id="drumResult" class="result">실제 드럼셋 배치야. 각 악기 위치를 직접 쳐봐.</p>
+                <p id="drumResult" class="result">Start Song을 누르면 노래가 재생되고, 맞는 패드를 박자에 맞춰 쳐.</p>
                 <div class="drum-map">
                   <div id="pad0">1: CRASH</div>
                   <div id="pad1">2: RIDE</div>
@@ -404,11 +404,19 @@
                   <div id="pad6">7: FLOOR TOM</div>
                   <div id="pad7">8: KICK</div>
                 </div>
-                <p class="hint">오버레이 드럼 패드로 타격해. 악기 영역은 타격 시 하이라이트돼. 이미지 출처: Wikimedia Commons (Drumsticks.png)</p>
+                <div class="gesture">
+                  <div>PERFECT: <b id="drumPerfect">0</b></div>
+                  <div>GOOD: <b id="drumGood">0</b></div>
+                  <div>MISS: <b id="drumMiss">0</b></div>
+                  <div>PROGRESS: <b id="drumProgress">0%</b></div>
+                </div>
+                <p class="hint">노트 링이 패드에 겹칠 때 타격하면 점수가 올라가. 이미지 출처: Wikimedia Commons (Drumsticks.png)</p>
               </div>
 
               <div class="card drum-actions">
-                <button id="drumResetBtn" class="reset">Reset Drum</button>
+                <button id="drumStartBtn" class="start">Start Song</button>
+                <button id="drumStopBtn" class="back">Stop Song</button>
+                <button id="drumResetBtn" class="reset">Reset</button>
                 <button id="drumMuteBtn" class="start">Mute: OFF</button>
               </div>
             </section>
@@ -451,6 +459,12 @@
       const drumHitsEl = document.getElementById("drumHits");
       const drumBestEl = document.getElementById("drumBest");
       const drumResultEl = document.getElementById("drumResult");
+      const drumPerfectEl = document.getElementById("drumPerfect");
+      const drumGoodEl = document.getElementById("drumGood");
+      const drumMissEl = document.getElementById("drumMiss");
+      const drumProgressEl = document.getElementById("drumProgress");
+      const drumStartBtn = document.getElementById("drumStartBtn");
+      const drumStopBtn = document.getElementById("drumStopBtn");
       const drumResetBtn = document.getElementById("drumResetBtn");
       const drumMuteBtn = document.getElementById("drumMuteBtn");
       const drumPadDefs = [
@@ -569,11 +583,31 @@
       let drumHits = 0;
       let drumCombo = 0;
       let drumBestCombo = 0;
+      let rhythmPerfect = 0;
+      let rhythmGood = 0;
+      let rhythmMiss = 0;
+      let rhythmIsRunning = false;
+      let rhythmIsCountingDown = false;
+      let rhythmStartedAt = 0;
+      let rhythmDurationSec = 0;
+      let rhythmJudgeUntilMs = 0;
+      let rhythmLastJudgeText = "READY";
+      let rhythmLastJudgeTone = "neutral";
+      let rhythmChart = [];
+      let scheduledSongNodes = [];
       let isMuted = false;
       let audioCtx = null;
       let stickSpriteImage = null;
       let singleStickSprite = null;
       let stickSpriteReady = false;
+
+      const RHYTHM_BPM = 112;
+      const RHYTHM_STEP_SEC = 60 / RHYTHM_BPM / 2;
+      const RHYTHM_LOOKAHEAD_SEC = 1.6;
+      const RHYTHM_WINDOWS = {
+        perfect: 0.09,
+        good: 0.18,
+      };
 
       const handState = new Map();
       const padLastHitAt = new Array(drumPadDefs.length).fill(0);
@@ -668,8 +702,21 @@
 
       function updateDrumScore() {
         drumHitsEl.textContent = String(drumHits);
-        drumBestEl.textContent = String(drumBestCombo);
-        metaEl.textContent = `DRUM Hits ${drumHits}`;
+        drumBestEl.textContent = String(drumCombo);
+        metaEl.textContent = `RHYTHM Score ${drumHits}`;
+      }
+
+      function updateRhythmBreakdown() {
+        drumPerfectEl.textContent = String(rhythmPerfect);
+        drumGoodEl.textContent = String(rhythmGood);
+        drumMissEl.textContent = String(rhythmMiss);
+        if (rhythmChart.length === 0) {
+          drumProgressEl.textContent = "0%";
+          return;
+        }
+        const judgedCount = rhythmPerfect + rhythmGood + rhythmMiss;
+        const progress = Math.round((judgedCount / rhythmChart.length) * 100);
+        drumProgressEl.textContent = `${clamp(progress, 0, 100)}%`;
       }
 
       function activateScreen(isGame) {
@@ -695,15 +742,54 @@
       }
 
       function resetDrum() {
+        stopRhythmGame(false);
         drumHits = 0;
         drumCombo = 0;
         drumBestCombo = 0;
-        drumResultEl.textContent = "실제 드럼셋 위치를 직접 타격해봐.";
+        rhythmPerfect = 0;
+        rhythmGood = 0;
+        rhythmMiss = 0;
+        rhythmJudgeUntilMs = 0;
+        rhythmLastJudgeText = "READY";
+        rhythmLastJudgeTone = "neutral";
+        rhythmChart = buildRhythmChart();
+        drumResultEl.textContent = "Start Song을 누르면 노래가 재생되고, 박자 노트를 맞춘다.";
         for (let i = 0; i < padLastHitAt.length; i++) {
           padLastHitAt[i] = 0;
           padFlashUntil[i] = 0;
         }
+        handState.clear();
         updateDrumScore();
+        updateRhythmBreakdown();
+      }
+
+      function buildRhythmChart() {
+        const bars = [
+          [0, 2, 5, 2, 7, 2, 5, 2],
+          [7, 2, 5, 2, 7, 2, 4, 6],
+          [7, 2, 5, 2, 7, 2, 5, 2],
+          [7, 2, 5, 2, 3, 4, 6, 7],
+          [0, 2, 5, 2, 7, 2, 5, 2],
+          [7, 2, 5, 2, 7, 2, 1, 2],
+          [7, 2, 5, 2, 7, 2, 5, 2],
+          [7, 2, 5, 2, 6, 4, 5, 7],
+        ];
+
+        const chart = [];
+        let id = 0;
+        for (let bar = 0; bar < bars.length; bar++) {
+          for (let step = 0; step < bars[bar].length; step++) {
+            chart.push({
+              id: id++,
+              pad: bars[bar][step],
+              timeSec: (bar * 8 + step) * RHYTHM_STEP_SEC,
+              judged: false,
+              judgment: null,
+            });
+          }
+        }
+        rhythmDurationSec = bars.length * 8 * RHYTHM_STEP_SEC + 1.1;
+        return chart;
       }
 
       function ensureAudio() {
@@ -876,6 +962,196 @@
         if (sound === "tomLow") playTom(146, 74, 0.27, hitStrength);
         if (sound === "crash") playCrash(hitStrength);
         if (sound === "ride") playRide(hitStrength);
+      }
+
+      function markJudgeFeedback(text, tone) {
+        rhythmLastJudgeText = text;
+        rhythmLastJudgeTone = tone;
+        rhythmJudgeUntilMs = performance.now() + 360;
+      }
+
+      function getRhythmNowSec() {
+        if (!rhythmIsRunning || !audioCtx) return 0;
+        return audioCtx.currentTime - rhythmStartedAt;
+      }
+
+      function trackScheduledNode(node) {
+        scheduledSongNodes.push(node);
+      }
+
+      function scheduleSongTone(when, freq, duration, gainLevel, type = "triangle") {
+        if (isMuted || !audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, when);
+        gain.gain.setValueAtTime(0.001, when);
+        gain.gain.exponentialRampToValueAtTime(Math.max(gainLevel, 0.001), when + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, when + duration);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(when);
+        osc.stop(when + duration + 0.03);
+        trackScheduledNode(osc);
+      }
+
+      function scheduleSongHatTick(when, gainLevel = 0.08) {
+        if (isMuted || !audioCtx) return;
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = makeNoiseBuffer();
+        const hp = audioCtx.createBiquadFilter();
+        hp.type = "highpass";
+        hp.frequency.value = 6200;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(gainLevel, when);
+        g.gain.exponentialRampToValueAtTime(0.001, when + 0.06);
+        noise.connect(hp).connect(g).connect(audioCtx.destination);
+        noise.start(when);
+        noise.stop(when + 0.08);
+        trackScheduledNode(noise);
+      }
+
+      function scheduleRhythmSong(startAt) {
+        if (!audioCtx) return;
+        const roots = [55, 65.41, 73.42, 65.41];
+        const totalSteps = 64;
+        const stepDur = RHYTHM_STEP_SEC;
+
+        for (let step = 0; step < totalSteps; step++) {
+          const when = startAt + step * stepDur;
+          const bar = Math.floor(step / 8);
+          if (step % 2 === 0) {
+            scheduleSongHatTick(when, step % 4 === 0 ? 0.09 : 0.065);
+          }
+          if (step % 4 === 0) {
+            const root = roots[bar % roots.length];
+            scheduleSongTone(when, root, stepDur * 1.65, 0.16, "sine");
+            scheduleSongTone(when + 0.015, root * 2, stepDur * 1.2, 0.06, "triangle");
+          }
+          if (step % 8 === 4) {
+            const root = roots[bar % roots.length] * 1.5;
+            scheduleSongTone(when, root, stepDur * 0.95, 0.08, "sawtooth");
+          }
+        }
+      }
+
+      function stopRhythmGame(showResult = true) {
+        rhythmIsRunning = false;
+        rhythmIsCountingDown = false;
+        rhythmStartedAt = 0;
+        countdownEl.textContent = "";
+        for (const node of scheduledSongNodes) {
+          try {
+            node.stop(0);
+          } catch (_err) {
+            // ignore already-ended scheduled nodes
+          }
+        }
+        scheduledSongNodes = [];
+
+        if (!showResult) return;
+        const total = rhythmChart.length || 1;
+        const weighted = rhythmPerfect + rhythmGood * 0.65;
+        const accuracy = Math.round((weighted / total) * 100);
+        drumResultEl.textContent = `곡 종료! 정확도 ${clamp(accuracy, 0, 100)}% / 최대 콤보 ${drumBestCombo}`;
+        statusEl.textContent = "Start Song으로 재도전";
+      }
+
+      async function startRhythmGame() {
+        if (mode !== "drum" || rhythmIsRunning || rhythmIsCountingDown) return;
+        ensureAudio();
+        resetDrum();
+        rhythmIsCountingDown = true;
+        statusEl.textContent = "리듬 카운트다운";
+
+        for (let i = 3; i > 0; i--) {
+          countdownEl.textContent = String(i);
+          await wait(550);
+        }
+        countdownEl.textContent = "GO!";
+        await wait(260);
+        countdownEl.textContent = "";
+
+        rhythmStartedAt = audioCtx.currentTime + 0.12;
+        rhythmIsRunning = true;
+        rhythmIsCountingDown = false;
+        scheduleRhythmSong(rhythmStartedAt);
+        statusEl.textContent = "비트에 맞춰 패드를 타격";
+        drumResultEl.textContent = "READY";
+        markJudgeFeedback("START", "good");
+      }
+
+      function judgeRhythmHit(padIndex, nowSec) {
+        let best = null;
+        let bestAbs = Number.POSITIVE_INFINITY;
+
+        for (const note of rhythmChart) {
+          if (note.judged || note.pad !== padIndex) continue;
+          const delta = nowSec - note.timeSec;
+          const absDelta = Math.abs(delta);
+          if (absDelta <= RHYTHM_WINDOWS.good && absDelta < bestAbs) {
+            best = note;
+            bestAbs = absDelta;
+          }
+          if (note.timeSec - nowSec > RHYTHM_WINDOWS.good && best) break;
+        }
+
+        if (!best) return null;
+        best.judged = true;
+        best.judgment = bestAbs <= RHYTHM_WINDOWS.perfect ? "perfect" : "good";
+        return best;
+      }
+
+      function applyRhythmMisses(nowSec) {
+        if (!rhythmIsRunning) return;
+        for (const note of rhythmChart) {
+          if (note.judged) continue;
+          if (nowSec - note.timeSec > RHYTHM_WINDOWS.good) {
+            note.judged = true;
+            note.judgment = "miss";
+            rhythmMiss += 1;
+            drumCombo = 0;
+            markJudgeFeedback("MISS", "miss");
+            drumResultEl.textContent = `MISS · ${drumPadDefs[note.pad].label}`;
+          }
+        }
+      }
+
+      function handleDrumStrike(pad, hitStrength) {
+        playPadSound(pad, hitStrength);
+        if (!rhythmIsRunning) {
+          drumResultEl.textContent = "Start Song을 눌러 리듬 게임 시작";
+          return;
+        }
+
+        const nowSec = getRhythmNowSec();
+        const judged = judgeRhythmHit(pad, nowSec);
+        if (!judged) {
+          rhythmMiss += 1;
+          drumCombo = 0;
+          markJudgeFeedback("MISS", "miss");
+          drumResultEl.textContent = `MISS · ${drumPadDefs[pad].label}`;
+          updateRhythmBreakdown();
+          updateDrumScore();
+          return;
+        }
+
+        drumCombo += 1;
+        drumBestCombo = Math.max(drumBestCombo, drumCombo);
+
+        if (judged.judgment === "perfect") {
+          rhythmPerfect += 1;
+          drumHits += 1000 + Math.min(420, drumCombo * 14);
+          markJudgeFeedback("PERFECT", "perfect");
+          drumResultEl.textContent = `PERFECT · ${drumPadDefs[pad].label}`;
+        } else {
+          rhythmGood += 1;
+          drumHits += 620 + Math.min(260, drumCombo * 8);
+          markJudgeFeedback("GOOD", "good");
+          drumResultEl.textContent = `GOOD · ${drumPadDefs[pad].label}`;
+        }
+
+        updateRhythmBreakdown();
+        updateDrumScore();
       }
 
       function getStickPose(hand, handedLabel) {
@@ -1071,6 +1347,53 @@
 
           padEls[idx].classList.toggle("hot", hot);
         });
+
+        drawRhythmOverlay(width, height);
+      }
+
+      function drawRhythmOverlay(width, height) {
+        const nowSec = getRhythmNowSec();
+        const showGuide = rhythmIsRunning || rhythmIsCountingDown;
+        if (!showGuide) return;
+
+        for (const note of rhythmChart) {
+          if (note.judged) continue;
+          const eta = note.timeSec - nowSec;
+          if (eta < -RHYTHM_WINDOWS.good || eta > RHYTHM_LOOKAHEAD_SEC) continue;
+
+          const pad = drumPadDefs[note.pad];
+          if (!pad) continue;
+          const cx = pad.cx * width;
+          const cy = pad.cy * height;
+          const target = Math.min(pad.rx * width, pad.ry * height) * 0.9;
+          const approach = target + (eta / RHYTHM_LOOKAHEAD_SEC) * Math.min(width, height) * 0.16;
+          const alpha = clamp(1 - eta / RHYTHM_LOOKAHEAD_SEC, 0.2, 1);
+
+          ctx.save();
+          ctx.strokeStyle = eta < 0.08 ? `rgba(255,255,255,${alpha})` : `rgba(34,211,238,${alpha * 0.92})`;
+          ctx.lineWidth = eta < 0.08 ? 4 : 3;
+          ctx.beginPath();
+          ctx.arc(cx, cy, Math.max(target, approach), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        if (performance.now() < rhythmJudgeUntilMs) {
+          const toneColor =
+            rhythmLastJudgeTone === "perfect"
+              ? "rgba(52,211,153,0.95)"
+              : rhythmLastJudgeTone === "good"
+                ? "rgba(251,191,36,0.95)"
+                : rhythmLastJudgeTone === "miss"
+                  ? "rgba(251,113,133,0.95)"
+                  : "rgba(236,254,255,0.95)";
+          ctx.save();
+          ctx.font = "bold 40px 'Segoe UI', 'Noto Sans KR', sans-serif";
+          ctx.fillStyle = toneColor;
+          ctx.textAlign = "center";
+          ctx.fillText(rhythmLastJudgeText, width * 0.5, height * 0.13);
+          ctx.restore();
+        }
       }
 
       function getPadAtPoint(x, y) {
@@ -1094,6 +1417,16 @@
       }
 
       function processDrumHits(results) {
+        const nowSec = getRhythmNowSec();
+        if (rhythmIsRunning) {
+          applyRhythmMisses(nowSec);
+          updateRhythmBreakdown();
+          const judgedCount = rhythmPerfect + rhythmGood + rhythmMiss;
+          if (nowSec > rhythmDurationSec && judgedCount >= rhythmChart.length) {
+            stopRhythmGame(true);
+          }
+        }
+
         if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
           handState.clear();
           return;
@@ -1125,17 +1458,7 @@
             const hitStrength = clamp((impact - 5) / 23, 0, 1);
             padLastHitAt[pad] = now;
             padFlashUntil[pad] = now + 140;
-            playPadSound(pad, hitStrength);
-
-            drumHits += 1;
-            drumCombo += 1;
-            drumBestCombo = Math.max(drumBestCombo, drumCombo);
-            updateDrumScore();
-            drumResultEl.textContent = `좋아! ${drumPadDefs[pad].label} 타격`;
-          }
-
-          if (pad < 0 && prev.pad >= 0) {
-            drumCombo = 0;
+            handleDrumStrike(pad, hitStrength);
           }
 
           handState.set(handKey, { pad, x, y });
@@ -1249,7 +1572,7 @@
               if (mode === "drum") {
                 drawDrumPads(canvas.width, canvas.height);
                 processDrumHits(results);
-                statusEl.textContent = "드럼 패드 타격 중";
+                statusEl.textContent = rhythmIsRunning ? "리듬 진행 중" : "리듬 모드 대기 중";
               }
             } else {
               statusEl.textContent = "손을 화면 안에 넣어줘";
@@ -1294,12 +1617,13 @@
 
         if (nextMode === "drum") {
           resetDrum();
-          metaEl.textContent = "DRUM Hits 0";
-          statusEl.textContent = "드럼 패드 타격 준비";
+          metaEl.textContent = "RHYTHM Score 0";
+          statusEl.textContent = "Start Song으로 리듬 시작";
         }
       }
 
       function goHome() {
+        stopRhythmGame(false);
         mode = null;
         if (document.fullscreenElement) {
           document.exitFullscreen();
@@ -1330,6 +1654,8 @@
       startBtn.addEventListener("click", startRpsRound);
       resetRpsBtn.addEventListener("click", resetRps);
 
+      drumStartBtn.addEventListener("click", startRhythmGame);
+      drumStopBtn.addEventListener("click", () => stopRhythmGame(true));
       drumResetBtn.addEventListener("click", resetDrum);
       drumMuteBtn.addEventListener("click", () => {
         isMuted = !isMuted;
@@ -1342,7 +1668,8 @@
         const key = Number(e.key);
         if (!Number.isInteger(key) || key < 1 || key > drumPadDefs.length) return;
         const idx = key - 1;
-        playPadSound(idx);
+        handleDrumStrike(idx, 0.78);
+        padLastHitAt[idx] = performance.now();
         padFlashUntil[idx] = performance.now() + 120;
       });
 
