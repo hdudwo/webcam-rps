@@ -938,9 +938,9 @@
       function drawDrumStick(hand, handedLabel) {
         const pose = getStickPose(hand, handedLabel);
         if (!pose) return;
-        const stickScale = 1.28;
+        const stickScale = 1.36;
         const stickLen = pose.drawLen * stickScale;
-        const stickH = pose.drawH * 1.2;
+        const stickH = pose.drawH * 1.28;
 
         if (stickSpriteReady && singleStickSprite) {
           ctx.save();
